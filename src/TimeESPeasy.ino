@@ -142,9 +142,17 @@ byte second()
 	return tm.Second;
 }
 
+// day of week, sunday is day 1
 int weekday()
 {
   return tm.Wday;
+}
+
+String weekday_str()
+{
+  const int wday(weekday() - 1); // here: Count from Sunday = 0
+  const String weekDays = F("SunMonTueWedThuFriSat");
+  return weekDays.substring(wday * 3, wday * 3 + 3);
 }
 
 void initTime()
@@ -162,9 +170,10 @@ void checkTime()
     PrevMinutes = tm.Minute;
     if (Settings.UseRules)
     {
-      String weekDays = F("AllSunMonTueWedThuFriSat");
-      String event = F("Clock#Time=");
-      event += weekDays.substring(weekday() * 3, weekday() * 3 + 3);
+      String event;
+      event.reserve(21);
+      event = F("Clock#Time=");
+      event += weekday_str();
       event += ",";
       if (hour() < 10)
         event += "0";
@@ -412,7 +421,7 @@ String getDateTimeString(char dateDelimiter, char timeDelimiter,  char dateTimeD
 /********************************************************************************************\
   Convert a string like "Sun,12:30" into a 32 bit integer
   \*********************************************************************************************/
-unsigned long string2TimeLong(String &str)
+unsigned long string2TimeLong(const String &str)
 {
   // format 0000WWWWAAAABBBBCCCCDDDD
   // WWWW=weekday, AAAA=hours tens digit, BBBB=hours, CCCC=minutes tens digit DDDD=minutes
@@ -421,8 +430,12 @@ unsigned long string2TimeLong(String &str)
   char TmpStr1[10];
   int w, x, y;
   unsigned long a;
-  str.toLowerCase();
-  str.toCharArray(command, 20);
+  {
+    // Within a scope so the tmpString is only used for copy.
+    String tmpString(str);
+    tmpString.toLowerCase();
+    tmpString.toCharArray(command, 20);    
+  }
   unsigned long lngTime = 0;
 
   if (GetArgv(command, TmpStr1, 1))

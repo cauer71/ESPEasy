@@ -7,13 +7,13 @@
 #define _HEAD false
 #define _TAIL true
 
-
 void sendContentBlocking(String& data);
 void sendHeaderBlocking(bool json);
 
-class StreamingBuffer{
+class StreamingBuffer {
 private:
-  bool lowMemorySkip; 
+  bool lowMemorySkip;
+
 public:
   uint32_t initialRam;
   uint32_t beforeTXRam;
@@ -22,230 +22,212 @@ public:
   uint32_t maxCoreUsage;
   uint32_t maxServerUsage;
   unsigned int BufferSize;
-  String buf;
   unsigned int sentBytes;
+  String buf;
 
-  StreamingBuffer(void) :
+  StreamingBuffer(void) : lowMemorySkip(false),
     initialRam(0), beforeTXRam(0), duringTXRam(0), finalRam(0), maxCoreUsage(0),
-    maxServerUsage(0), BufferSize(400), sentBytes(0),lowMemorySkip(false)
-    {
-      buf.reserve(BufferSize+100);
-      buf = "";
-    }
-  StreamingBuffer(String &a) :
-    initialRam(0), beforeTXRam(0), duringTXRam(0), finalRam(0), maxCoreUsage(0),
-    maxServerUsage(0), BufferSize(400), sentBytes(0) {
-      buf.reserve(BufferSize+100);
-      buf = a;
-    }
-  StreamingBuffer operator= (String& a)                 {    this->buf= a;                  checkFull();  return *this;  }
-  StreamingBuffer operator= (const String& a)           { this->buf+= a;                     checkFull();   return *this; }
-  StreamingBuffer operator+= (long unsigned int  a)     { this->buf+=String(a);  checkFull(); return *this;   }
+    maxServerUsage(0), BufferSize(400), sentBytes(0)
+  {
+    buf.reserve(BufferSize + 100);
+    buf = "";
+  }
+  StreamingBuffer operator= (String& a)                 { this->buf=a;           checkFull();  return *this;  }
+  StreamingBuffer operator= (const String& a)           { this->buf=a;           checkFull();  return *this;  }
+  StreamingBuffer operator+= (long unsigned int  a)     { this->buf+=String(a);  checkFull();  return *this;  }
   StreamingBuffer operator+= (float a)                  { this->buf+=String(a);  checkFull();  return *this;  }
   StreamingBuffer operator+= (int a)                    { this->buf+=String(a);  checkFull();  return *this;  }
   StreamingBuffer operator+= (uint32_t a)               { this->buf+=String(a);  checkFull();  return *this;  }
-  StreamingBuffer operator+= (const StreamingBuffer& a) { this->buf+=a.buf;      checkFull(); return *this;   }
-  StreamingBuffer operator+= (const String& a)          {
+  StreamingBuffer operator+=(const String& a) {
     if (lowMemorySkip) return *this;
-    if ((      (this->buf.length() + a.length()) >BufferSize)&&(this->buf.length()>100 ))
+    const int length = a.length();
+    if (((this->buf.length() + length) > BufferSize) &&
+        (this->buf.length() > 100))
       sendContentBlocking(this->buf);
-      this->buf+=a ;
-      checkFull();
-      return *this;
+    int pos = 0;
+    int flush_step = BufferSize - this->buf.length();
+    if (flush_step < 1) flush_step = 1;
+    while (pos < length) {
+      const char c = a[pos];
+      this->buf += c;
+      ++pos;
+      --flush_step;
+      if (flush_step == 0) {
+        sendContentBlocking(this->buf);
+        flush_step = BufferSize;
+      }
     }
-  StreamingBuffer operator+ (const StreamingBuffer& a)  { this->buf = this->buf+a.buf;      checkFull(); return *this;  }
-  StreamingBuffer operator+ (const String& a)           { this->buf = this->buf+a;          checkFull(); return *this;  }
+    checkFull();
+    return *this;
+  }
 
-  void checkFull(void){
-    if (lowMemorySkip) this->buf=""; 
-    if (this->buf.length()>BufferSize) {
-    trackTotalMem();
-    sendContentBlocking(this->buf);
+  void checkFull(void) {
+    if (lowMemorySkip) this->buf = "";
+    if (this->buf.length() > BufferSize) {
+      trackTotalMem();
+      sendContentBlocking(this->buf);
     }
   }
 
-  void startStream(bool json=false){
-    maxCoreUsage=maxServerUsage=0;
-    beforeTXRam= ESP.getFreeHeap();
-    initialRam=  ESP.getFreeHeap();
-    sentBytes=0;
-    buf ="";
-    if (beforeTXRam<3000 ){ 
-       lowMemorySkip=true; 
-       WebServer.send(200,"text/plain","Low memory. Cannot display webpage :-(");
-       #if defined(ESP8266)
-         tcpCleanup();   
-       #endif
-       return;
-       } 
-     else
-   sendHeaderBlocking(json);
-  }
-
-void trackTotalMem()
-{
+  void startStream() {
+    maxCoreUsage = maxServerUsage = 0;
     beforeTXRam = ESP.getFreeHeap();
-    if( (initialRam-beforeTXRam)  > maxServerUsage)
-      maxServerUsage=initialRam-beforeTXRam ;
- }
-
-void trackCoreMem()
-{
-    duringTXRam = ESP.getFreeHeap();
-    if( (initialRam-duringTXRam)  > maxCoreUsage)
-      maxCoreUsage=(initialRam-duringTXRam) ;
-}
-  void endStream(void){
-  if (!lowMemorySkip){
-     if (buf.length() >0) sendContentBlocking(buf);
-        buf ="";
-        sendContentBlocking(buf);
-        WebServer.sendHeader( "Content-Length", "0");
-        WebServer.send ( 200, "text/plain", "");
-    
-        finalRam= ESP.getFreeHeap();
-        String log = String("Ram usage: Webserver only: ")+ maxServerUsage +" including Core: "+ maxCoreUsage;
-        addLog(LOG_LEVEL_DEBUG, log);
-    } else {
-        String log = String("Webpage skipped: low memory: ")+ finalRam ;
-        addLog(LOG_LEVEL_DEBUG, log);
-        lowMemorySkip=false;
-    }
+    initialRam = ESP.getFreeHeap();
+    sentBytes = 0;
+    buf = "";
+    if (beforeTXRam < 3000) {
+      lowMemorySkip = true;
+      WebServer.send(200, "text/plain", "Low memory. Cannot display webpage :-(");
+       #if defined(ESP8266)
+         tcpCleanup();
+       #endif
+      return;
+    } else
+      sendHeaderBlocking();
   }
 
-}TXBuffer;
+  void trackTotalMem() {
+    beforeTXRam = ESP.getFreeHeap();
+    if ((initialRam - beforeTXRam) > maxServerUsage)
+      maxServerUsage = initialRam - beforeTXRam;
+  }
 
+  void trackCoreMem() {
+    duringTXRam = ESP.getFreeHeap();
+    if ((initialRam - duringTXRam) > maxCoreUsage)
+      maxCoreUsage = (initialRam - duringTXRam);
+  }
 
-void sendContentBlocking(String& data){
-      checkRAM(F("sendContentBlocking"));
-       uint32_t freeBeforeSend= ESP.getFreeHeap();
-      String log = String("sendcontent free: ")+freeBeforeSend+" chunk size:"+ data.length();
+  void endStream(void) {
+    if (!lowMemorySkip) {
+      if (buf.length() > 0) sendContentBlocking(buf);
+      buf = "";
+      sendContentBlocking(buf);
+      finalRam = ESP.getFreeHeap();
+      String log = String("Ram usage: Webserver only: ") + maxServerUsage +
+                   " including Core: " + maxCoreUsage;
       addLog(LOG_LEVEL_DEBUG, log);
-      freeBeforeSend= ESP.getFreeHeap();
-      if (TXBuffer.beforeTXRam > freeBeforeSend)   TXBuffer.beforeTXRam = freeBeforeSend ;
-      TXBuffer.duringTXRam=freeBeforeSend;
-      #if defined(ESP8266) && defined(ARDUINO_ESP8266_RELEASE_2_3_0)
-          String size  =String(data.length(), HEX)+"\r\n";
-          //do chunked transfer encoding ourselves (WebServer doesn't support it)
-          WebServer.sendContent(size);
-          if (data.length()) WebServer.sendContent(data);
-          WebServer.sendContent("\r\n");
-      #else  // ESP8266 2.4.0rc2 and higher and the ESP32 webserver supports chunked http transfer
-          unsigned int timeout = 0;
-          if (freeBeforeSend<5000 ) timeout = 100;
-          if (freeBeforeSend<4000 ) timeout = 1000;
-          uint32_t beginWait = millis();
-          WebServer.sendContent(data);
-          while ((ESP.getFreeHeap() < freeBeforeSend) &&  !timeOutReached(beginWait + timeout)) {
-            if(ESP.getFreeHeap()<TXBuffer.duringTXRam) TXBuffer.duringTXRam=ESP.getFreeHeap();;
-            TXBuffer.trackCoreMem();
-            checkRAM(F("duringDataTX"));
-            delay(1);
-          }
-     #endif
+    } else {
+      String log = String("Webpage skipped: low memory: ") + finalRam;
+      addLog(LOG_LEVEL_DEBUG, log);
+      lowMemorySkip = false;
+    }
+  }
+} TXBuffer;
 
-      TXBuffer.sentBytes+=data.length();
-      data="";
+void sendContentBlocking(String& data) {
+  checkRAM(F("sendContentBlocking"));
+  uint32_t freeBeforeSend = ESP.getFreeHeap();
+  String log = String("sendcontent free: ") + freeBeforeSend + " chunk size:" + data.length();
+  addLog(LOG_LEVEL_DEBUG_DEV, log);
+  freeBeforeSend = ESP.getFreeHeap();
+  if (TXBuffer.beforeTXRam > freeBeforeSend)
+    TXBuffer.beforeTXRam = freeBeforeSend;
+  TXBuffer.duringTXRam = freeBeforeSend;
+#if defined(ESP8266) && defined(ARDUINO_ESP8266_RELEASE_2_3_0)
+  String size = String(data.length(), HEX) + "\r\n";
+  // do chunked transfer encoding ourselves (WebServer doesn't support it)
+  WebServer.sendContent(size);
+  if (data.length()) WebServer.sendContent(data);
+  WebServer.sendContent("\r\n");
+#else  // ESP8266 2.4.0rc2 and higher and the ESP32 webserver supports chunked http transfer
+  unsigned int timeout = 0;
+  if (freeBeforeSend < 5000) timeout = 100;
+  if (freeBeforeSend < 4000) timeout = 1000;
+  const uint32_t beginWait = millis();
+  WebServer.sendContent(data);
+  while ((ESP.getFreeHeap() < freeBeforeSend) &&
+         !timeOutReached(beginWait + timeout)) {
+    if (ESP.getFreeHeap() < TXBuffer.duringTXRam)
+      TXBuffer.duringTXRam = ESP.getFreeHeap();
+    ;
+    TXBuffer.trackCoreMem();
+    checkRAM(F("duringDataTX"));
+    delay(1);
+  }
+#endif
+
+  TXBuffer.sentBytes += data.length();
+  data = "";
 }
 
+void sendHeaderBlocking() {
+  checkRAM(F("sendHeaderBlocking"));
+#if defined(ESP8266) && defined(ARDUINO_ESP8266_RELEASE_2_3_0)
+  WebServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  WebServer.sendHeader("Content-Type", "text/html", true);
+  WebServer.sendHeader("Accept-Ranges", "none");
+  WebServer.sendHeader("Cache-Control", "no-cache");
+  WebServer.sendHeader("Transfer-Encoding", "chunked");
+  WebServer.send(200);
+#else
+  unsigned int timeout = 0;
+  uint32_t freeBeforeSend = ESP.getFreeHeap();
+  if (freeBeforeSend < 5000) timeout = 100;
+  if (freeBeforeSend < 4000) timeout = 1000;
+  const uint32_t beginWait = millis();
+  WebServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  WebServer.sendHeader("Content-Type", "text/html", true);
+  WebServer.sendHeader("Cache-Control", "no-cache");
+  WebServer.send(200);
+  // dont wait on 2.3.0. Memory returns just too slow.
+  while ((ESP.getFreeHeap() < freeBeforeSend) &&
+         !timeOutReached(beginWait + timeout)) {
+    checkRAM(F("duringHeaderTX"));
+    delay(1);
+  }
+#endif
+}
 
-
- void sendHeaderBlocking(bool json=false){
-    checkRAM(F("sendHeaderBlocking"));
-    #if defined(ESP8266) && defined(ARDUINO_ESP8266_RELEASE_2_3_0)
-     if (json) // "application/json"
-        WebServer.sendHeader("Content-Type","application/json",true);
-     else
-       WebServer.sendHeader("Content-Type","text/html",true);
-       WebServer.sendHeader("Cache-Control","no-cache");
-       WebServer.sendHeader("Transfer-Encoding","chunked");
-       WebServer.send(200);
-    #else
-     unsigned int timeout = 0;
-     uint32_t freeBeforeSend= ESP.getFreeHeap();
-     if (freeBeforeSend<5000 ) timeout = 100;
-     if (freeBeforeSend<4000 ) timeout = 1000;
-     uint32_t beginWait = millis();
-     WebServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
-     if (json) // "application/json"
-        WebServer.sendHeader("Content-Type","application/json",true);
-     else
-       WebServer.sendHeader("Content-Type","text/html",true);
-       WebServer.sendHeader("Cache-Control","no-cache");
-       WebServer.send(200);
-       // dont wait on 2.3.0. Memory returns just too slow.
-     while ((ESP.getFreeHeap() < freeBeforeSend) &&  !timeOutReached(beginWait + timeout)) {
-        checkRAM(F("duringHeaderTX"));
-        delay(1);
-     }
-    #endif
- }
-
-
-
-
-void sendHeadandTail(const String& tmplName, boolean Tail=false)
-{
-  String pageTemplate="";
+void sendHeadandTail(const String& tmplName, boolean Tail = false) {
+  String pageTemplate = "";
   int indexStart, indexEnd;
-  String  varName; //, varValue;
+  String varName;  //, varValue;
   String fileName = tmplName;
   fileName += F(".htm");
   fs::File f = SPIFFS.open(fileName, "r+");
 
-  if (f)
-  {
+  if (f) {
     pageTemplate.reserve(f.size());
-    while (f.available())
-      pageTemplate += (char)f.read();
+    while (f.available()) pageTemplate += (char)f.read();
     f.close();
-  }
-  else
-  {
+  } else {
     getWebPageTemplateDefault(tmplName, pageTemplate);
   }
   checkRAM(F("sendWebPage"));
-    //web activity timer
+  // web activity timer
   lastWeb = millis();
 
-
-
   if (Tail) {
-    pageTemplate = pageTemplate.substring( 11+pageTemplate.indexOf("{{content}}")); // advance beyond content key
-    TXBuffer+=pageTemplate;
-  } else
+    TXBuffer += pageTemplate.substring(
+        11 + // Size of "{{content}}"
+        pageTemplate.indexOf("{{content}}"));  // advance beyond content key
+  } else {
+    while ((indexStart = pageTemplate.indexOf("{{")) >= 0) {
+      TXBuffer += pageTemplate.substring(0, indexStart);
+      pageTemplate = pageTemplate.substring(indexStart);
+      if ((indexEnd = pageTemplate.indexOf("}}")) > 0) {
+        varName = pageTemplate.substring(2, indexEnd);
+        pageTemplate = pageTemplate.substring(indexEnd + 2);
+        varName.toLowerCase();
 
-
-  while ((indexStart = pageTemplate.indexOf("{{")) >= 0)
-  {
-    TXBuffer += pageTemplate.substring(0, indexStart);
-    pageTemplate = pageTemplate.substring(indexStart);
-    if ((indexEnd = pageTemplate.indexOf("}}")) > 0)
-    {
-     varName = pageTemplate.substring(2, indexEnd);
-     pageTemplate = pageTemplate.substring(indexEnd + 2);
-     varName.toLowerCase();
-
-     if (varName == F("content")) {  //is var == page content?
-           break;        // send first part of result only
-      } else if (varName == F("error")) {
-       String errors(getErrorNotifications());
-       if (errors.length() > 0)
-          TXBuffer+=(errors);
-      } else {
-         getWebPageTemplateVar(varName);
-         TXBuffer.checkFull();
-       }
+        if (varName == F("content")) {  // is var == page content?
+          break;  // send first part of result only
+        } else if (varName == F("error")) {
+          String errors(getErrorNotifications());
+          if (errors.length() > 0) TXBuffer += (errors);
+        } else {
+          getWebPageTemplateVar(varName);
+          TXBuffer.checkFull();
+        }
+      } else {  // no closing "}}"
+        pageTemplate = pageTemplate.substring(2);  // eat "{{"
+      }
     }
-    else   {//no closing "}}"
-      pageTemplate = pageTemplate.substring(2);   //eat "{{"
-   }
   }
-
-  if (shouldReboot)
-  {
+  if (shouldReboot) {
     //we only add this here as a seperate chucnk to prevent using too much memory at once
-    TXBuffer+=F(
+    TXBuffer += F(
       "<script>"
         "i=document.getElementById('rbtmsg');"
         "i.innerHTML=\"Please reboot: <input id='reboot' class='button link' value='Reboot' type='submit' onclick='r()'>\";"
@@ -282,10 +264,8 @@ void sendHeadandTail(const String& tmplName, boolean Tail=false)
         "}"
 
       "</script>"
-    );
-
+      );
   }
-
 }
 
 
@@ -372,50 +352,62 @@ void clearAccessBlock()
 #include "core_version.h"
 #define HTML_SYMBOL_WARNING "&#9888;"
 
-#define TASKS_PER_PAGE 12
+#if defined(ESP8266)
+  #define TASKS_PER_PAGE 12
+#endif
+#if defined(ESP32)
+  #define TASKS_PER_PAGE 32
+#endif
 
 static const char pgDefaultCSS[] PROGMEM = {
-  //color scheme: #07D #D50 #DB0 #A0D
-  "* {font-family:sans-serif; font-size:12pt;}"
-  "h1 {font-size:16pt; color:#07D; margin:8px 0; font-weight:bold;}"
-  "h2 {font-size:12pt; margin:0 -4px; padding:6px; background-color:#444; color:#FFF; font-weight:bold;}"
-  "h3 {font-size:12pt; margin:16px -4px 0 -4px; padding:4px; background-color:#EEE; color:#444; font-weight:bold;}"
-  "h6 {font-size:10pt; color:#07D;}"
-  //buttons
-  ".button {margin:4px; padding:4px 16px; background-color:#07D; color:#FFF; text-decoration:none; border-radius:4px}"
-  ".button.link {}"
-  ".button.help {padding:2px 4px; border:solid 1px #FFF; border-radius:50%}"
-  ".button:hover {background:#369;}"
-  //tables
-  "th {padding:6px; background-color:#444; color:#FFF; border-color:#888; font-weight:bold;}"
-  "td {padding:4px;}"
-  "tr {padding:4px;}"
-  "table {color:#000;}"
-  //inside a form
-  ".note {color:#444; font-style:italic}"
-  //header with title and menu
-  ".headermenu {position:fixed; top:0; left:0; right:0; height:64px; padding:8px 12px; background-color:#F8F8F8; border-bottom: 1px solid #DDD;}"
-  ".bodymenu {margin-top:96px;}"
-  //menu
-  ".menubar {position:inherit; top:44px;}"
-  ".menu {float:left; height:20px; padding: 4px 16px 8px 16px; color:#444; white-space:nowrap; border:solid transparent; border-width: 4px 1px 1px; border-radius: 4px 4px 0 0; text-decoration: none;}"
-  ".menu.active {color:#000; background-color:#FFF; border-color:#07D #DDD #FFF;}"
-  ".menu:hover {color:#000; background:#DEF;}"
-  //symbols for enabled
-  ".on {color:green;}"
-  ".off {color:red;}"
-  //others
-  ".div_l {float:left;}"
-  ".div_r {float:right; margin:2px; padding:1px 10px; border-radius:4px; background-color:#080; color:white;}"
-  ".div_br {clear:both;}"
-  //".active {text-decoration:underline;}"
-  // The alert message box
-  ".alert {padding: 20px; background-color: #f44336; color: white; margin-bottom: 15px;}"
-  // The close button
-  ".closebtn {margin-left: 15px; color: white; font-weight: bold; float: right; font-size: 22px; line-height: 20px; cursor: pointer; transition: 0.3s;}"
-  // When moving the mouse over the close button
-  ".closebtn:hover {color: black;}"
-  "\0"
+    //color scheme: #07D #D50 #DB0 #A0D
+    "* {font-family: sans-serif; font-size: 12pt; margin: 0px; padding: 0px; box-sizing: border-box; }"
+    "h1 {font-size: 16pt; color: #07D; margin: 8px 0; font-weight: bold; }"
+    "h2 {font-size: 12pt; margin: 0 -4px; padding: 6px; background-color: #444; color: #FFF; font-weight: bold; }"
+    "h3 {font-size: 12pt; margin: 16px -4px 0 -4px; padding: 4px; background-color: #EEE; color: #444; font-weight: bold; }"
+    "h6 {font-size: 10pt; color: #07D; }"
+    // buttons
+    ".button {margin: 4px; padding: 4px 16px; background-color: #07D; color: #FFF; text-decoration: none; border-radius: 4px; }"
+    ".button.link {}"
+    ".button.help {padding: 2px 4px; border: solid 1px #FFF; border-radius: 50%; }"
+    ".button:hover {background: #369; }"
+    // tables
+    "th {padding: 6px; background-color: #444; color: #FFF; border-color: #888; font-weight: bold; }"
+    "td {padding: 4px; }"
+    "tr {padding: 4px; }"
+    "table {color: #000; width: 100%; min-width: 420px; }"
+    // inside a form
+    ".note {color: #444; font-style: italic; }"
+    //header with title and menu
+    ".headermenu {position: fixed; top: 0; left: 0; right: 0; height: 90px; padding: 8px 12px; background-color: #F8F8F8; border-bottom: 1px solid #DDD; }"
+    ".bodymenu {margin-top: 96px; }"
+    // menu
+    ".menubar {position: inherit; top: 55px; }"
+    ".menu {float: left; padding: 4px 16px 8px 16px; color: #444; white-space: nowrap; border: solid transparent; border-width: 4px 1px 1px; border-radius: 4px 4px 0 0; text-decoration: none; }"
+    ".menu.active {color: #000; background-color: #FFF; border-color: #07D #DDD #FFF; }"
+    ".menu:hover {color: #000; background: #DEF; }"
+    // symbols for enabled
+    ".on {color: green; }"
+    ".off {color: red; }"
+    // others
+    ".div_l {float: left; }"
+    ".div_r {float: right; margin: 2px; padding: 1px 10px; border-radius: 4px; background-color: #080; color: white; }"
+    ".div_br {clear: both; }"
+    // The alert message box
+    ".alert {padding: 20px; background-color: #f44336; color: white; margin-bottom: 15px; }"
+    // The close button
+    ".closebtn {margin-left: 15px; color: white; font-weight: bold; float: right; font-size: 22px; line-height: 20px; cursor: pointer; transition: 0.3s; }"
+    // When moving the mouse over the close button
+    ".closebtn:hover {color: black; }"
+    "section{overflow-x: auto; width: 100%; }"
+    // For screens with width less than 960 pixels
+    "@media screen and (max-width: 960px) {"
+      ".bodymenu{  margin-top: 0px; }"
+      ".headermenu{  position: relative;   height: auto;   float: left;   width: 100%;   padding: 0px; }"
+      ".headermenu h1{  padding: 8px 12px; }"
+      ".menubar{  top: 0px;   position: relative;   float: left;   width: 100%; }"
+      ".headermenu a{  width: 100%;   padding:7px 10px;   display: block;   height: auto;   border: 0px;   border-radius:0px; }; }"
+    "\0"
 };
 
 #define PGMT( pgm_ptr ) ( reinterpret_cast< const __FlashStringHelper * >( pgm_ptr ) )
@@ -662,8 +654,23 @@ void getWebPageTemplateVar(const String& varName )
    else
     {
       TXBuffer += F("<style>");
-      // TXBuffer += PGMT(pgDefaultCSS);
-      for (unsigned int i = 0; i<  strlen(pgDefaultCSS); i++){   TXBuffer +=String((char)pgm_read_byte(&pgDefaultCSS[i]));      } // saves 1k of ram
+      //TXBuffer += PGMT(pgDefaultCSS);
+      // Send CSS per chunk to avoid sending either too short or too large strings.
+      String tmpString;
+      tmpString.reserve(64);
+      for (unsigned int i = 0; i < strlen(pgDefaultCSS); i++)
+      {
+        const char c = (char)pgm_read_byte(&pgDefaultCSS[i]);
+        tmpString += c;
+        if (c == ';' || c == '{') {
+          TXBuffer += tmpString;
+          tmpString = "";
+        }
+      } // saves 1k of ram
+      if (tmpString.length() > 0) {
+        // Flush left over part.
+        TXBuffer += tmpString;
+      }
       TXBuffer += F("</style>");
     }
   }
@@ -759,7 +766,7 @@ void handle_root() {
   int freeMem = ESP.getFreeHeap();
   String sCommand = WebServer.arg(F("cmd"));
 
-  if ((strcasecmp_P(sCommand.c_str(), PSTR("wifidisconnect")) != 0) && (strcasecmp_P(sCommand.c_str(), PSTR("reboot")) != 0))
+  if ((strcasecmp_P(sCommand.c_str(), PSTR("wifidisconnect")) != 0) && (strcasecmp_P(sCommand.c_str(), PSTR("reboot")) != 0)&& (strcasecmp_P(sCommand.c_str(), PSTR("reset")) != 0))
   {
     if (timerAPoff)
       timerAPoff = millis() + 2000L;  //user has reached the main page - AP can be switched off in 2..3 sec
@@ -911,6 +918,15 @@ void handle_root() {
       String log = F("     : Rebooting...");
       addLog(LOG_LEVEL_INFO, log);
       cmd_within_mainloop = CMD_REBOOT;
+    }
+   if (strcasecmp_P(sCommand.c_str(), PSTR("reset")) == 0)
+    {
+      String log = F("     : factory reset...");
+      addLog(LOG_LEVEL_INFO, log);
+      cmd_within_mainloop = CMD_REBOOT;
+      TXBuffer+= F("OK. Please wait > 1 min and connect to Acces point. PW=configesp, URL=192.168.4.1");
+      TXBuffer.endStream();
+      ExecuteCommand(VALUE_SOURCE_HTTP, sCommand.c_str());
     }
 
     TXBuffer+= "OK";
@@ -1535,17 +1551,6 @@ void handle_notifications() {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
 //********************************************************************************
 // Web Interface hardware page
 //********************************************************************************
@@ -1555,9 +1560,6 @@ void handle_hardware() {
   navMenuIndex = 3;
   TXBuffer.startStream();
   sendHeadandTail(F("TmplStd"),_HEAD);
-
-
-
 
   if (isFormItem(F("psda")))
   {
@@ -1745,10 +1747,10 @@ void handle_devices() {
   byte setpage = WebServer.arg(F("setpage")).toInt();
   if (setpage > 0)
   {
-    if (setpage <= (TASKS_MAX / 4))
+    if (setpage <= (TASKS_MAX / TASKS_PER_PAGE))
       page = setpage;
     else
-      page = TASKS_MAX / 4;
+      page = TASKS_MAX / TASKS_PER_PAGE;
   }
 
 
@@ -2943,9 +2945,6 @@ void handle_log() {
   TXBuffer.startStream();
   sendHeadandTail(F("TmplStd"),_HEAD);
 
-
-
-
   TXBuffer += F("<script>function RefreshMe(){window.location = window.location}setTimeout('RefreshMe()', 3000);</script>");
   TXBuffer += F("<table><TR><TH>Log<TR><TD>");
   for (int i = 0; i< LOG_STRUCT_MESSAGE_LINES; i++){
@@ -3073,6 +3072,11 @@ void handle_tools() {
   addButton(TXBuffer.buf,  F("download"), F("Save"));
   TXBuffer += F("<TD>");
   TXBuffer += F("Saves a settings file");
+
+  TXBuffer += F("<TR><TD HEIGHT=\"30\">");
+  addButton(TXBuffer.buf,  F("/?cmd=reset"), F("Factory Reset"));
+  TXBuffer += F("<TD>");
+  TXBuffer += F("Erase all settings files");
 
 #if defined(ESP8266)
   if (ESP.getFlashChipRealSize() > 524288)
@@ -3448,30 +3452,26 @@ void handle_control() {
 //********************************************************************************
 // Web Interface JSON page (no password!)
 //********************************************************************************
-
-
 void handle_json()
 {
-  checkRAM(F("handle_json"));
-  // ToDo TD-er: Must check for allowed client IP??????
-  String tasknr = WebServer.arg(F("tasknr"));
-  TXBuffer.startStream( true);  // true = WebServer.send(200, "application/json");
- // sendHeadandTail(F("TmplStd"),_HEAD);
-
+  String tasknr = WebServer.arg("tasknr");
+  String reply = "";
 
   if (tasknr.length() == 0)
   {
-
-    TXBuffer.buf += F("{\"System\":{\n");
- 	  TXBuffer.buf += F("\"Name\":");		      TXBuffer.buf += F("\"");	TXBuffer.buf += Settings.Name;	TXBuffer.buf += F("\"");	TXBuffer.buf += F(",");
-	  TXBuffer.buf += F("\"Unit\":");					TXBuffer.buf += Settings.Unit;	TXBuffer.buf += F(",");
-	  TXBuffer.buf += F("\"Build\":");				TXBuffer.buf += BUILD;	TXBuffer.buf += F(",");
-	  TXBuffer.buf += F("\"Git Build\":");	  TXBuffer.buf += F("\"");	TXBuffer.buf += BUILD_GIT;	 TXBuffer.buf += F("\"");	TXBuffer.buf += F(",");
-	  TXBuffer.buf += F("\"Local time\":");	  TXBuffer.buf += F("\"");	TXBuffer.buf += getDateTimeString('-',':',' '); TXBuffer.buf += F("\"");	TXBuffer.buf += F(",");
-	  TXBuffer.buf += F("\"Uptime\":");				TXBuffer.buf += wdcounter / 2;		 TXBuffer.buf += F(",");
-    TXBuffer.buf += F("\"Free RAM\":");			TXBuffer.buf += ESP.getFreeHeap();	 	//end of array
-
-    TXBuffer.buf += F("},\n");
+    reply += F("{\"System\":{\n");
+    reply += to_json_object_value(F("Build"), String(BUILD));
+    reply += F(",\n");
+    reply += to_json_object_value(F("Git Build"), String(BUILD_GIT));
+    reply += F(",\n");
+    reply += to_json_object_value(F("Local time"), getDateTimeString('-',':',' '));
+    reply += F(",\n");
+    reply += to_json_object_value(F("Unit"), String(Settings.Unit));
+    reply += F(",\n");
+    reply += to_json_object_value(F("Uptime"), String(wdcounter / 2));
+    reply += F(",\n");
+    reply += to_json_object_value(F("Free RAM"), String(ESP.getFreeHeap()));
+    reply += F("\n},\n");
   }
 
   byte taskNr = tasknr.toInt();
@@ -3482,14 +3482,13 @@ void handle_json()
     firstTaskIndex = taskNr - 1;
     lastTaskIndex = taskNr - 1;
   }
-
-  byte lastActiveTaskIndex = 0;
+   byte lastActiveTaskIndex = 0;
   for (byte TaskIndex = firstTaskIndex; TaskIndex <= lastTaskIndex; TaskIndex++)
     if (Settings.TaskDeviceNumber[TaskIndex])
       lastActiveTaskIndex = TaskIndex;
 
   if (taskNr == 0 )
-    TXBuffer += F("\"Sensors\":[\n");
+    reply += F("\"Sensors\":[\n");
   for (byte TaskIndex = firstTaskIndex; TaskIndex <= lastTaskIndex; TaskIndex++)
   {
     if (Settings.TaskDeviceNumber[TaskIndex])
@@ -3497,38 +3496,36 @@ void handle_json()
       byte BaseVarIndex = TaskIndex * VARS_PER_TASK;
       byte DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[TaskIndex]);
       LoadTaskSettings(TaskIndex);
-      TXBuffer += F("{\n");
+      reply += F("{\n");
 
-      TXBuffer += F("\"TaskName\":\"");
-      TXBuffer +=  ExtraTaskSettings.TaskDeviceName;
-      TXBuffer += F("\"");
+      reply += to_json_object_value(F("tasknr"), String(TaskIndex + 1));
+      reply += F(",\n");
+      reply += to_json_object_value(F("TaskName"), String(ExtraTaskSettings.TaskDeviceName));
+      reply += F(",\n");
+      reply += to_json_object_value(F("Type"), getPluginNameFromDeviceIndex(DeviceIndex));
       if (Device[DeviceIndex].ValueCount != 0)
-        TXBuffer += F(",");
-      TXBuffer += F("\n");
+        reply += F(",");
+      reply += F("\n");
 
       for (byte x = 0; x < Device[DeviceIndex].ValueCount; x++)
       {
-        TXBuffer += F("\"");
-        TXBuffer +=  ExtraTaskSettings.TaskDeviceValueNames[x];
-        TXBuffer += F("\": ");
-        TXBuffer +=  UserVar[BaseVarIndex + x];
+        reply += to_json_object_value(ExtraTaskSettings.TaskDeviceValueNames[x],
+                             toString(UserVar[BaseVarIndex + x], ExtraTaskSettings.TaskDeviceValueDecimals[x]));
         if (x < (Device[DeviceIndex].ValueCount - 1))
-          TXBuffer += F(",");
-        TXBuffer += F("\n");
+          reply += F(",");
+        reply += F("\n");
       }
-      TXBuffer += F("}");
+      reply += F("}");
       if (TaskIndex != lastActiveTaskIndex)
-        TXBuffer += F(",");
-      TXBuffer += F("\n");
+        reply += F(",");
+      reply += F("\n");
     }
   }
   if (taskNr == 0 )
-    TXBuffer += F("]}\n");
+    reply += F("]}\n");
 
-  TXBuffer.endStream();
-
+  WebServer.send(200, "application/json", reply);
 }
-
 
 //********************************************************************************
 // Web Interface config page

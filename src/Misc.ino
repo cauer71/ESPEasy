@@ -14,12 +14,12 @@ extern "C" void tcp_abort (struct tcp_pcb* pcb);
 
 void tcpCleanup()
 {
-    
+
      while(tcp_tw_pcbs!=NULL)
     {
       tcp_abort(tcp_tw_pcbs);
     }
-   
+
  }
 #endif
 
@@ -156,43 +156,6 @@ String flashGuard()
 
 //use this in function that can return an error string. it automaticly returns with an error string if there where too many flash writes.
 #define FLASH_GUARD() { String flashErr=flashGuard(); if (flashErr.length()) return(flashErr); }
-
-/*********************************************************************************************\
-   Get value count from sensor type
-  \*********************************************************************************************/
-
-byte getValueCountFromSensorType(byte sensorType)
-{
-  byte valueCount = 0;
-
-  switch (sensorType)
-  {
-    case SENSOR_TYPE_SINGLE:                      // single value sensor, used for Dallas, BH1750, etc
-    case SENSOR_TYPE_SWITCH:
-    case SENSOR_TYPE_DIMMER:
-      valueCount = 1;
-      break;
-    case SENSOR_TYPE_LONG:                      // single LONG value, stored in two floats (rfid tags)
-      valueCount = 1;
-      break;
-    case SENSOR_TYPE_TEMP_HUM:
-    case SENSOR_TYPE_TEMP_BARO:
-    case SENSOR_TYPE_DUAL:
-      valueCount = 2;
-      break;
-    case SENSOR_TYPE_TEMP_HUM_BARO:
-    case SENSOR_TYPE_TRIPLE:
-    case SENSOR_TYPE_WIND:
-      valueCount = 3;
-      break;
-    case SENSOR_TYPE_QUAD:
-      valueCount = 4;
-      break;
-  }
-  return valueCount;
-}
-
-
 
 
 /*********************************************************************************************\
@@ -401,7 +364,7 @@ void delayBackground(unsigned long delay)
 /********************************************************************************************\
   Parse a command string to event struct
   \*********************************************************************************************/
-void parseCommandString(struct EventStruct *event, String& string)
+void parseCommandString(struct EventStruct *event, const String& string)
 {
   checkRAM(F("parseCommandString"));
   char command[80];
@@ -1093,7 +1056,7 @@ void ResetFactory(void)
   String fname;
 
   fname=F(FILE_CONFIG);
-  InitFile(fname.c_str(), 65536);
+  InitFile(fname.c_str(), CONFIG_FILE_SIZE);
 
   fname=F(FILE_SECURITY);
   InitFile(fname.c_str(), 4096);
@@ -1309,7 +1272,25 @@ boolean isNumerical(const String& tBuf, bool mustBeInteger) {
   return true;
 }
 
-
+// convert old and new time string to nr of seconds
+float timeStringToSeconds(String tBuf) {
+	float sec = 0;
+	int split = tBuf.indexOf(':');
+	if (split < 0) { // assume only hours
+		sec += tBuf.toFloat() * 60 * 60;
+	} else {
+		sec += tBuf.substring(0, split).toFloat() * 60 * 60;
+		tBuf = tBuf.substring(split +1);
+		split = tBuf.indexOf(':');
+		if (split < 0) { //old format
+			sec += tBuf.toFloat() * 60;
+		} else { //new format
+			sec += tBuf.substring(0, split).toFloat() * 60;
+			sec += tBuf.substring(split +1).toFloat();
+		}
+	}
+	return sec;
+}
 
 /********************************************************************************************\
   Init critical variables for logging (important during initial factory reset stuff )
@@ -1534,13 +1515,9 @@ uint32_t getChecksum(byte* buffer, size_t size)
 }
 
 
-
 /********************************************************************************************\
   Parse string template
   \*********************************************************************************************/
-
-
-
 String parseTemplate(String &tmpString, byte lineSize)
 {
   checkRAM(F("parseTemplate"));
@@ -1576,50 +1553,73 @@ String parseTemplate(String &tmpString, byte lineSize)
           valueFormat = valueName.substring(hashtagIndex + 1);
           valueName = valueName.substring(0, hashtagIndex);
         }
-        for (byte y = 0; y < TASKS_MAX; y++)
+        
+        if (deviceName.equalsIgnoreCase("Plugin"))
         {
-          if (Settings.TaskDeviceEnabled[y])
+          String tmpString = tmpStringMid.substring(7);
+          tmpString.replace("#", ",");
+          if (PluginCall(PLUGIN_REQUEST, 0, tmpString))
+            newString += tmpString;
+        }
+        else
+          for (byte y = 0; y < TASKS_MAX; y++)
           {
-            LoadTaskSettings(y);
-            if (ExtraTaskSettings.TaskDeviceName[0] != 0)
+            if (Settings.TaskDeviceEnabled[y])
             {
-              if (deviceName.equalsIgnoreCase(ExtraTaskSettings.TaskDeviceName))
+              LoadTaskSettings(y);
+              if (ExtraTaskSettings.TaskDeviceName[0] != 0)
               {
-                boolean match = false;
-                for (byte z = 0; z < VARS_PER_TASK; z++)
-                  if (valueName.equalsIgnoreCase(ExtraTaskSettings.TaskDeviceValueNames[z]))
-                  {
-                    // here we know the task and value, so find the uservar
-                    match = true;
-                    String value = "";
-                    byte DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[y]);
-                    if (Device[DeviceIndex].VType == SENSOR_TYPE_LONG)
-                      value = (unsigned long)UserVar[y * VARS_PER_TASK + z] + ((unsigned long)UserVar[y * VARS_PER_TASK + z + 1] << 16);
-                    else
-                      value = toString(UserVar[y * VARS_PER_TASK + z], ExtraTaskSettings.TaskDeviceValueDecimals[z]);
-
-                    if (valueFormat == "R")
-                    {
-                      int filler = lineSize - newString.length() - value.length() - tmpString.length() ;
-                      for (byte f = 0; f < filler; f++)
-                        newString += " ";
-                    }
-                    newString += String(value);
-                    break;
-                  }
-                if (!match) // try if this is a get config request
+                if (deviceName.equalsIgnoreCase(ExtraTaskSettings.TaskDeviceName))
                 {
-                  struct EventStruct TempEvent;
-                  TempEvent.TaskIndex = y;
-                  String tmpName = valueName;
-                  if (PluginCall(PLUGIN_GET_CONFIG, &TempEvent, tmpName))
-                    newString += tmpName;
+                  boolean match = false;
+                  for (byte z = 0; z < VARS_PER_TASK; z++)
+                    if (valueName.equalsIgnoreCase(ExtraTaskSettings.TaskDeviceValueNames[z]))
+                    {
+                      // here we know the task and value, so find the uservar
+                      match = true;
+                      String value = "";
+                      byte DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[y]);
+                      if (Device[DeviceIndex].VType == SENSOR_TYPE_LONG)
+                        value = (unsigned long)UserVar[y * VARS_PER_TASK + z] + ((unsigned long)UserVar[y * VARS_PER_TASK + z + 1] << 16);
+                      else
+                        value = toString(UserVar[y * VARS_PER_TASK + z], ExtraTaskSettings.TaskDeviceValueDecimals[z]);
+
+                      int oidx;
+                      if ((oidx = valueFormat.indexOf('O')) >= 0) // Output
+                      {
+                        valueFormat.remove(oidx);
+                        oidx = valueFormat.indexOf('!'); // inverted or active low
+                        float val = value.toFloat();
+                        if (oidx >= 0) {
+                          valueFormat.remove(oidx);
+                          value = val == 0 ? " ON" : "OFF";
+                        } else {
+                          value = val == 0 ? "OFF" : " ON";
+                        }
+                      }
+
+                      if (valueFormat == "R")
+                      {
+                        int filler = lineSize - newString.length() - value.length() - tmpString.length() ;
+                        for (byte f = 0; f < filler; f++)
+                          newString += " ";
+                      }
+                      newString += String(value);
+                      break;
+                    }
+                  if (!match) // try if this is a get config request
+                  {
+                    struct EventStruct TempEvent;
+                    TempEvent.TaskIndex = y;
+                    String tmpName = valueName;
+                    if (PluginCall(PLUGIN_GET_CONFIG, &TempEvent, tmpName))
+                      newString += tmpName;
+                  }
+                  break;
                 }
-                break;
               }
             }
           }
-        }
       }
       leftBracketIndex = tmpString.indexOf('[');
       count++;
@@ -1627,11 +1627,12 @@ String parseTemplate(String &tmpString, byte lineSize)
     checkRAM(F("parseTemplate2"));
     newString += tmpString;
 
-    if (currentTaskIndex!=255)
+    if (currentTaskIndex != 255)
       LoadTaskSettings(currentTaskIndex);
   }
 
   parseSystemVariables(newString, false);
+  parseStandardConversions(newString, false);
 
   // padding spaces
   while (newString.length() < lineSize)
@@ -2099,8 +2100,18 @@ String rulesProcessingFile(String fileName, String& event)
             struct EventStruct TempEvent;
             parseCommandString(&TempEvent, action);
             yield();
-            if (!PluginCall(PLUGIN_WRITE, &TempEvent, action))
+            // Use a tmp string to call PLUGIN_WRITE, since PluginCall may inadvertenly alter the string.
+            String tmpAction(action);
+            if (!PluginCall(PLUGIN_WRITE, &TempEvent, tmpAction)) {
+              if (!tmpAction.equals(action)) {
+                String log = F("PLUGIN_WRITE altered the string: ");
+                log += action;
+                log += F(" to: ");
+                log += tmpAction;
+                addLog(LOG_LEVEL_ERROR, log);
+              }
               ExecuteCommand(VALUE_SOURCE_SYSTEM, action.c_str());
+            }
             yield();
           }
         }
@@ -2131,10 +2142,20 @@ boolean ruleMatch(String& event, String& rule)
   if (event.charAt(0) == '!')
   {
     int pos = rule.indexOf('#');
-    if (pos == -1) // no # sign in rule, use 'wildcard' match...
-      tmpEvent = event.substring(0,rule.length());
+    if (pos == -1) // no # sign in rule, use 'wildcard' match on event 'source'
+      {
+        tmpEvent = event.substring(0,rule.length());
+        tmpRule = rule;
+      }
 
-    if (tmpEvent.equalsIgnoreCase(rule))
+    pos = rule.indexOf('*');
+    if (pos != -1) // a * sign in rule, so use a'wildcard' match on message
+      {
+        tmpEvent = event.substring(0,pos-1);
+        tmpRule = rule.substring(0,pos-1);
+      }
+
+    if (tmpEvent.equalsIgnoreCase(tmpRule))
       return true;
     else
       return false;
@@ -2263,63 +2284,101 @@ boolean conditionMatchExtended(String& check) {
 	return leftcond;
 }
 
-boolean conditionMatch(String& check)
+boolean conditionMatch(const String& check)
 {
   boolean match = false;
 
-  int comparePos = 0;
-  char compare = ' ';
-  comparePos = check.indexOf(">");
-  if (comparePos > 0)
-  {
-    compare = '>';
+  char compare    = ' ';
+
+  int posStart = check.length();
+  int posEnd = posStart;
+  int comparePos  = 0;
+
+  if ((comparePos = check.indexOf("!="))>0 && comparePos<posStart) {
+	  posStart = comparePos;
+	  posEnd = posStart+2;
+	  compare = '!'+'=';
   }
-  else
-  {
-    comparePos = check.indexOf("<");
-    if (comparePos > 0)
-    {
-      compare = '<';
-    }
-    else
-    {
-      comparePos = check.indexOf("=");
-      if (comparePos > 0)
-      {
-        compare = '=';
-      }
-    }
+  if ((comparePos = check.indexOf("<>"))>0 && comparePos<posStart) {
+	  posStart = comparePos;
+	  posEnd = posStart+2;
+	  compare = '!'+'=';
+  }
+  if ((comparePos = check.indexOf(">="))>0 && comparePos<posStart) {
+	  posStart = comparePos;
+	  posEnd = posStart+2;
+	  compare = '>'+'=';
+  }
+  if ((comparePos = check.indexOf("<="))>0 && comparePos<posStart) {
+	  posStart = comparePos;
+	  posEnd = posStart+2;
+	  compare = '<'+'=';
+  }
+  if ((comparePos = check.indexOf("<"))>0 && comparePos<posStart) {
+	  posStart = comparePos;
+	  posEnd = posStart+1;
+	  compare = '<';
+  }
+  if ((comparePos = check.indexOf(">"))>0 && comparePos<posStart) {
+	  posStart = comparePos;
+	  posEnd = posStart+1;
+	  compare = '>';
+  }
+  if ((comparePos = check.indexOf("="))>0 && comparePos<posStart) {
+	  posStart = comparePos;
+	  posEnd = posStart+1;
+	  compare = '=';
   }
 
   float Value1 = 0;
   float Value2 = 0;
 
-  if (comparePos > 0)
+  if (compare > ' ')
   {
-    String tmpCheck = check.substring(comparePos + 1);
-    Value2 = tmpCheck.toFloat();
-    tmpCheck = check.substring(0, comparePos);
-    Value1 = tmpCheck.toFloat();
+    String tmpCheck1 = check.substring(0, posStart);
+    String tmpCheck2 = check.substring(posEnd);
+    if (!isFloat(tmpCheck1) || !isFloat(tmpCheck2)) {
+        Value1 = timeStringToSeconds(tmpCheck1);
+        Value2 = timeStringToSeconds(tmpCheck2);
+    } else {
+        Value1 = tmpCheck1.toFloat();
+        Value2 = tmpCheck2.toFloat();
+    }
   }
   else
     return false;
 
   switch (compare)
   {
-    case '>':
-      if (Value1 > Value2)
-        match = true;
-      break;
+  case '>'+'=':
+	  if (Value1 >= Value2)
+		  match = true;
+	  break;
 
-    case '<':
-      if (Value1 < Value2)
-        match = true;
-      break;
+  case '<'+'=':
+	  if (Value1 <= Value2)
+		  match = true;
+	  break;
 
-    case '=':
-      if (Value1 == Value2)
-        match = true;
-      break;
+  case '!'+'=':
+	  if (Value1 != Value2)
+		  match = true;
+	  break;
+
+  case '>':
+	  if (Value1 > Value2)
+		  match = true;
+	  break;
+
+  case '<':
+	  if (Value1 < Value2)
+		  match = true;
+	  break;
+
+  case '=':
+	  if (Value1 == Value2)
+		  match = true;
+	  break;
   }
   return match;
 }
@@ -2768,33 +2827,6 @@ void ArduinoOTAInit()
 
 #endif
 
-String getBearing(int degrees)
-{
-  const __FlashStringHelper* bearing[] = {
-    F("N"),
-    F("NNE"),
-    F("NE"),
-    F("ENE"),
-    F("E"),
-    F("ESE"),
-    F("SE"),
-    F("SSE"),
-    F("S"),
-    F("SSW"),
-    F("SW"),
-    F("WSW"),
-    F("W"),
-    F("WNW"),
-    F("NW"),
-    F("NNW")
-  };
-  int bearing_idx=int(degrees/22.5);
-  if (bearing_idx<0 || bearing_idx>=(int) (sizeof(bearing)/sizeof(bearing[0])))
-    return("");
-  else
-    return(bearing[bearing_idx]);
-
-}
 
 // Compute the dew point temperature, given temperature and humidity (temp in Celcius)
 // Formula: http://www.ajdesigner.com/phphumidity/dewpoint_equation_dewpoint_temperature.php

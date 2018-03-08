@@ -208,7 +208,14 @@
 //   DO NOT CHANGE ANYTHING BELOW THIS LINE
 // ********************************************************************************
 #define ESP_PROJECT_PID           2016110801L
-#define VERSION                             2 // config file version (not ESPEasy version). increase if you make incompatible changes to config system.
+
+#if defined(ESP8266)
+  #define VERSION                             2 // config file version (not ESPEasy version). increase if you make incompatible changes to config system.
+#endif
+#if defined(ESP32)
+  #define VERSION                             3 // Change in config.dat mapping needs a full reset
+#endif
+
 #define BUILD                           20100 // git version 2.1.0
 #if defined(ESP8266)
   #define BUILD_NOTES                 " - Mega"
@@ -253,6 +260,8 @@
 #define PLUGIN_GET_DEVICEGPIONAMES         22
 #define PLUGIN_EXIT                        23
 #define PLUGIN_GET_CONFIG                  24
+#define PLUGIN_UNCONDITIONAL_POLL          25
+#define PLUGIN_REQUEST                     26
 
 #define CPLUGIN_PROTOCOL_ADD                1
 #define CPLUGIN_PROTOCOL_TEMPLATE           2
@@ -294,7 +303,14 @@
 #else
   #define DEVICES_MAX                      64
 #endif
-#define TASKS_MAX                          12 // max 12!
+
+#if defined(ESP8266)
+  #define TASKS_MAX                          12 // max 12!
+#endif
+#if defined(ESP32)
+  #define TASKS_MAX                          32
+#endif
+
 #define CONTROLLER_MAX                      3 // max 4!
 #define NOTIFICATION_MAX                    3 // max 4!
 #define VARS_PER_TASK                       4
@@ -359,9 +375,18 @@
 #define DAT_CONTROLLER_SIZE              1024
 #define DAT_NOTIFICATION_SIZE            1024
 
-#define DAT_OFFSET_TASKS                 4096  // each task = 2k, (1024 basic + 1024 bytes custom), 12 max
-#define DAT_OFFSET_CONTROLLER           28672  // each controller = 1k, 4 max
-#define DAT_OFFSET_CUSTOM_CONTROLLER    32768  // each custom controller config = 1k, 4 max.
+#if defined(ESP8266)
+  #define DAT_OFFSET_TASKS                 4096  // each task = 2k, (1024 basic + 1024 bytes custom), 12 max
+  #define DAT_OFFSET_CONTROLLER           28672  // each controller = 1k, 4 max
+  #define DAT_OFFSET_CUSTOM_CONTROLLER    32768  // each custom controller config = 1k, 4 max.
+  #define CONFIG_FILE_SIZE                65536
+#endif
+#if defined(ESP32)
+  #define DAT_OFFSET_CONTROLLER            8192  // each controller = 1k, 4 max
+  #define DAT_OFFSET_CUSTOM_CONTROLLER    12288  // each custom controller config = 1k, 4 max.
+  #define DAT_OFFSET_TASKS                32768  // each task = 2k, (1024 basic + 1024 bytes custom), 32 max
+  #define CONFIG_FILE_SIZE               131072
+#endif
 
 /*
 	To modify the stock configuration without changing this repo file :
@@ -382,7 +407,7 @@
   #define FILE_CONFIG       "config.dat"
   #define FILE_SECURITY     "security.dat"
   #define FILE_NOTIFICATION "notification.dat"
-  #define FILE_RULES        "rules1.dat"
+  #define FILE_RULES        "rules1.txt"
   #include <lwip/init.h>
   #ifndef LWIP_VERSION_MAJOR
     #error
@@ -434,9 +459,9 @@
   #define FILE_CONFIG       "/config.dat"
   #define FILE_SECURITY     "/security.dat"
   #define FILE_NOTIFICATION "/notification.dat"
-  #define FILE_RULES        "/rules1.dat"
+  #define FILE_RULES        "/rules1.txt"
   #include <WiFi.h>
-  #include  "ping.h"
+  #include  "esp32_ping.h"
   #include <ESP32WebServer.h>
   #include "SPIFFS.h"
   ESP32WebServer WebServer(80);
@@ -1402,6 +1427,7 @@ void run10TimesPerSecond()
   start = micros();
   timer100ms = millis() + 100;
   PluginCall(PLUGIN_TEN_PER_SECOND, 0, dummyString);
+  PluginCall(PLUGIN_UNCONDITIONAL_POLL, 0, dummyString);
   if (Settings.UseRules && eventBuffer.length() > 0)
   {
     rulesProcessing(eventBuffer);
