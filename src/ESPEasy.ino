@@ -89,8 +89,8 @@
 #define DEFAULT_AP_KEY      "configesp"         // Enter network WPA key for AP (config) mode
 
 // --- Wifi Client Mode -----------------------------------------------------------------------------
-#define DEFAULT_SSID        "ssid"              // Enter your Wifi network SSID
-#define DEFAULT_KEY         "wpakey"            // Enter your Wifi network WPA key
+#define DEFAULT_SSID        "robin"              // Enter your Wifi network SSID
+#define DEFAULT_KEY         "Asterbit25$"            // Enter your Wifi network WPA key
 
 #define DEFAULT_USE_STATIC_IP   false           // (true|false) enabled or disabled static IP
 #define DEFAULT_IP          "192.168.0.50"      // Enter your IP address
@@ -102,14 +102,14 @@
 #define DEFAULT_IP_BLOCK_LEVEL 1                // 0: ALL_ALLOWED  1: LOCAL_SUBNET_ALLOWED  2: ONLY_IP_RANGE_ALLOWED
 
 // --- Default Controller ------------------------------------------------------------------------------
-#define DEFAULT_CONTROLLER   false              // true or false enabled or disabled, set 1st controller defaults
+#define DEFAULT_CONTROLLER   true              // true or false enabled or disabled, set 1st controller defaults
 // using a default template, you also need to set a DEFAULT PROTOCOL to a suitable MQTT protocol !
 #define DEFAULT_PUB         "sensors/espeasy/%sysname%/%tskname%/%valname%" // Enter your pub
 #define DEFAULT_SUB         "sensors/espeasy/%sysname%/#" // Enter your sub
-#define DEFAULT_SERVER      "192.168.0.8"       // Enter your Server IP address
+#define DEFAULT_SERVER      "192.168.1.17"       // Enter your Server IP address
 #define DEFAULT_PORT        8080                // Enter your Server port value
 
-#define DEFAULT_PROTOCOL    1                   // Protocol used for controller communications
+#define DEFAULT_PROTOCOL    5                   // Protocol used for controller communications
 //   1 = Domoticz HTTP
 //   2 = Domoticz MQTT
 //   3 = Nodo Telnet
@@ -122,15 +122,15 @@
 
 
 // --- Advanced Settings ---------------------------------------------------------------------------------
-#define DEFAULT_USE_RULES			false	// (true|false) Enable Rules?
+#define DEFAULT_USE_RULES			true	// (true|false) Enable Rules?
 
 #define DEFAULT_MQTT_RETAIN			false	// (true|false) Retain MQTT messages?
 #define DEFAULT_MQTT_DELAY			1000	// Time in milliseconds to retain MQTT messages
 
-#define DEFAULT_USE_NTP				false	// (true|false) Use NTP Server
-#define DEFAULT_NTP_HOST			""		// NTP Server Hostname
-#define DEFAULT_TIME_ZONE			0		// Time Offset (in minutes)
-#define DEFAULT_USE_DST				false	// (true|false) Use Daily Time Saving
+#define DEFAULT_USE_NTP				true	// (true|false) Use NTP Server
+#define DEFAULT_NTP_HOST			"fritz.box"		// NTP Server Hostname
+#define DEFAULT_TIME_ZONE			60		// Time Offset (in minutes)
+#define DEFAULT_USE_DST				true	// (true|false) Use Daily Time Saving
 
 #define LOG_TO_SERIAL         1
 #define LOG_TO_SYSLOG         2
