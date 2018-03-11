@@ -498,7 +498,9 @@ void getWebPageTemplateDefault(const String& tmplName, String& tmpl)
               "<h1>Welcome to ESP Easy Mega AP</h1>"
               "</header>"
               "<section>"
+              "<span class='message error'>"
               "{{error}}"
+              "</span>"
               "{{content}}"
               "</section>"
               "<footer>"
@@ -521,7 +523,9 @@ void getWebPageTemplateDefault(const String& tmplName, String& tmpl)
               "<h1>ESP Easy Mega: {{name}}</h1>"
               "</header>"
               "<section>"
+              "<span class='message error'>"
               "{{error}}"
+              "</span>"
               "{{content}}"
               "</section>"
               "<footer>"
@@ -1014,7 +1018,7 @@ void handle_config() {
     }
 
     Settings.Delay = sensordelay.toInt();
-    Settings.deepSleep = (deepsleep == "on");
+    Settings.deepSleep = deepsleep.toInt();
     Settings.deepSleepOnFail = (deepsleeponfail == "on");
     str2ip(espip, Settings.IP);
     str2ip(espgateway, Settings.Gateway);
@@ -1070,7 +1074,9 @@ void handle_config() {
 
   addFormSubHeader(TXBuffer.buf,  F("Sleep Mode"));
 
-  addFormCheckBox(TXBuffer.buf,  F("Sleep enabled"), F("deepsleep"), Settings.deepSleep);
+  addFormNumericBox(TXBuffer.buf,  F("Sleep awake time"), F("deepsleep"), Settings.deepSleep, 0, 255);
+  addUnit(TXBuffer.buf,  F("sec"));
+  addFormNote(TXBuffer.buf,  F("0 = Sleep Disabled, else time awake from sleep"));
 
   addHelpButton(TXBuffer.buf,  F("SleepMode"));
   addFormNumericBox(TXBuffer.buf,  F("Sleep Delay"), F("delay"), Settings.Delay, 0, 4294);   //limited by hardware to ~1.2h
@@ -3393,6 +3399,11 @@ void handle_login() {
     else
     {
       TXBuffer += F("Invalid password!");
+      if (Settings.UseRules)
+      {
+        String event = F("Login#Failed");
+        rulesProcessing(event);
+      }
     }
   }
 
@@ -4136,7 +4147,7 @@ void handle_filelist() {
   if (fdelete.length() > 0)
   {
     SPIFFS.remove(fdelete);
-    // flashCount();
+    checkRuleSets();
   }
 
 
@@ -4649,6 +4660,7 @@ void handle_rules() {
   sendHeadandTail(F("TmplStd"),true);
   TXBuffer.endStream();
 
+  checkRuleSets();
 }
 
 
