@@ -1,4 +1,55 @@
 -------------------------------------------------
+Changes in release mega-20180314 (since mega-20180313)
+-------------------------------------------------
+
+Release date: Wed Mar 14 04:00:11 CET 2018
+
+mvdbro (1):
+      #893 part1, send messages
+
+
+-------------------------------------------------
+Changes in release mega-20180313 (since mega-20180312)
+-------------------------------------------------
+
+Release date: Tue Mar 13 04:00:11 CET 2018
+
+Bartlomiej Zimon (4):
+      - fix for #1065
+      - remove double trimm()
+      - fix for #1065
+      - remove double trimm()
+
+ESPEasy release bot (1):
+      automaticly updated release notes for v2.0-20180312
+
+Unknown (1):
+      Rule Engine minor fix and added dev debugging
+
+mvdbro (1):
+      ESP32 C010 fix
+
+
+-------------------------------------------------
+Changes in release mega-20180312 (since mega-20180311)
+-------------------------------------------------
+
+Release date: Mon Mar 12 04:00:07 CET 2018
+
+ESPEasy release bot (1):
+      automaticly updated release notes for v2.0-20180311
+
+Unknown (4):
+      [issue #1039 ] Change CSS to show topmost SSID on large screens
+      [webserver] Improve chunked transfer
+      [issue #1039 ] Change CSS to show topmost SSID on large screens
+      [webserver] Improve chunked transfer
+
+mvdbro (1):
+      Rule Engine minor fix and added dev debugging
+
+
+-------------------------------------------------
 Changes in release mega-20180311 (since mega-20180310)
 -------------------------------------------------
 

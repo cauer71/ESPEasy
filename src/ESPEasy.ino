@@ -271,6 +271,9 @@
 #define CPLUGIN_WEBFORM_SAVE                6
 #define CPLUGIN_WEBFORM_LOAD                7
 #define CPLUGIN_GET_PROTOCOL_DISPLAY_NAME   8
+#define CPLUGIN_TASK_CHANGE_NOTIFICATION    9
+#define CPLUGIN_INIT                       10 
+#define CPLUGIN_UDP_IN                     11
 
 #define CONTROLLER_HOSTNAME                 1
 #define CONTROLLER_IP                       2
@@ -400,10 +403,10 @@
 #endif
 
 
-#include "core_version.h"
 #include "ESPEasyTimeTypes.h"
 #define FS_NO_GLOBALS
 #if defined(ESP8266)
+  #include "core_version.h"
   #define NODE_TYPE_ID                        NODE_TYPE_ID_ESP_EASYM_STD
   #define FILE_CONFIG       "config.dat"
   #define FILE_SECURITY     "security.dat"
@@ -455,6 +458,10 @@
   #define PIN_D_MAX        16
 #endif
 #if defined(ESP32)
+
+  // Temp fix for a missing core_version.h within ESP Arduino core. Wait until they actually have different releases
+  #define ARDUINO_ESP8266_RELEASE "2_4_0"
+  
   #define NODE_TYPE_ID                        NODE_TYPE_ID_ESP_EASY32_STD
   #define ICACHE_RAM_ATTR IRAM_ATTR
   #define FILE_CONFIG       "/config.dat"
@@ -567,7 +574,7 @@ struct SettingsStruct
     BaudRate(0), MessageDelay(0), deepSleep(0),
     CustomCSS(false), DST(false), WDI2CAddress(0),
     UseRules(false), UseSerial(false), UseSSDP(false), UseNTP(false),
-    WireClockStretchLimit(0), GlobalSync(false), ConnectionFailuresThreshold(0),
+    WireClockStretchLimit(0), ConnectionFailuresThreshold(0),
     TimeZone(0), MQTTRetainFlag(false), InitSPI(false),
     Pin_status_led_Inversed(false), deepSleepOnFail(false), UseValueLogger(false),
     DST_Start(0), DST_End(0)
@@ -636,7 +643,7 @@ struct SettingsStruct
   boolean       UseSSDP;
   boolean       UseNTP;
   unsigned long WireClockStretchLimit;
-  boolean       GlobalSync;
+  boolean       _GlobalSync; // obsolete!
   unsigned long ConnectionFailuresThreshold;
   int16_t       TimeZone;
   boolean       MQTTRetainFlag;
@@ -976,7 +983,7 @@ struct ProtocolStruct
 {
   ProtocolStruct() :
     Number(0), usesMQTT(false), usesAccount(false), usesPassword(false),
-    defaultPort(0), usesTemplate(false), usesID(false) {}
+    defaultPort(0), usesTemplate(false), usesID(false), Custom(false) {}
   byte Number;
   boolean usesMQTT;
   boolean usesAccount;
@@ -984,6 +991,7 @@ struct ProtocolStruct
   int defaultPort;
   boolean usesTemplate;
   boolean usesID;
+  boolean Custom;
 } Protocol[CPLUGIN_MAX];
 
 struct NotificationStruct
@@ -1680,12 +1688,6 @@ void SensorSendTask(byte TaskIndex)
         }
       }
       sendData(&TempEvent);
-    } else if (!anyControllerEnabled() && Settings.GlobalSync) {
-      // No other controller enabled thus need to make sure global sync is still performed.
-      if (Settings.TaskDeviceGlobalSync[TaskIndex]) {
-        LoadTaskSettings(TaskIndex);
-        SendUDPTaskData(0, TaskIndex, TaskIndex);
-      }
     }
   }
 }
